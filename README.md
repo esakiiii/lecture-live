@@ -15,6 +15,9 @@
 - 🗂️ **三套模板**：结构化课堂笔记（要点/概念/疑问/待办）、大纲+关键词、问答对
 - 🍎 **推送到备忘录**：一键把原文推到本机 macOS「备忘录」(Notes.app)，彻底本地
 - 🗄 **归档本节课**：一键把「原文 + 三套笔记 + 本场录音」落盘到 `archive/` 目录（Markdown + WAV），并自动维护 `INDEX.md` 索引，方便长期留存与回溯
+- 🌐 **公网分享**：用 ngrok v3 dev domain 拿到**固定 HTTPS 地址**，朋友在 Windows Chrome 直接打开就能用（HTTPS 下浏览器自动允许麦克风）。配套 `SHARE_MODE=1` 自动禁掉「推送到备忘录」和「归档」两个写入口，保护你本机
+- 🚀 **本机常驻**：`./install-service.sh` 一键注册 macOS launchd 三件套（Ollama / 应用 / 公网隧道），开机自启、崩溃自动重启
+- ⚡ **低延迟**：说话人分离用「最近 N 段滑动窗口」聚类，前端每 3 秒一段实时刷，彻底告别 2 分钟滞后
 
 ## 架构
 
@@ -110,23 +113,72 @@ Chrome 打开 **http://localhost:5000**：
 
 > 说明：录音取自本会话在后端累积的音频缓冲（转写时已在内存中），所以**务必在同一页面会话内、停止录音后、刷新页面前**点归档，才能带上 `recording.wav`；刷新页面后再归档则只含文字与笔记。
 
+## 🚀 本机常驻（开机自启 + 崩溃自愈）
+
+不想每次手动 `./run.sh`？用 `launchd` 把三项注册成 macOS 系统服务：
+
+```bash
+chmod +x install-service.sh uninstall-service.sh
+bash install-service.sh         # 注册 Ollama + 应用 + 公网隧道
+```
+
+会创建三个 `~/Library/LaunchAgents/com.lecturelive.*.plist`，行为：
+- **开机自启**：用户登录后自动启动
+- **崩溃自愈**：服务意外退出后 10 秒内自动重启
+- **依赖顺序**：Ollama 先起 → 应用 → 公网隧道（隧道 plist 内 `sleep 30` 等应用先就绪）
+- **防冲突**：如果本机 11434 端口已被手动 `ollama serve` 或 Ollama.app 占用，跳过 Ollama 注册，避免抢端口
+
+```bash
+launchctl list | grep lecturelive    # 看三个服务状态
+bash uninstall-service.sh            # 全部停掉并取消
+```
+
+## 🌐 公网分享（让朋友的电脑直接访问）
+
+局域网外的朋友想用？用 **ngrok v3 dev domain** 拿到一个**永久不变的固定 HTTPS 地址**（绑定 ngrok 账号，重启 ngrok 仍是同一 URL，不会像 quick tunnel 那样随机变域名）：
+
+```bash
+brew install ngrok   # 或直接到 https://ngrok.com/download 下载 darwin 二进制
+ngrok config add-authtoken <你的 PAT>   # 一次性写入 ~/Library/Application Support/ngrok/ngrok.yml
+# 在 https://dashboard.ngrok.com/cloud-edge/domains 看你的 dev domain（免费 1 个）
+ngrok http 5000 --url=https://<你的>.ngrok-free.dev
+```
+
+> ⚠️ **ngrok 免费 plan 每月 1GB 流量**（endpoint hours 计量），日常课堂转写够用，密集使用一个月会触发限速。
+
+### 🛡 分享模式（保护你本机）
+
+公网分享时**禁止**让陌生人点「推送到备忘录」/「归档」写你的 Mac。开启 `SHARE_MODE=1` 后：
+
+- `/push-notes`、`/archive` 后端直接 **403**
+- 前端 `GET /config` 返回 `{"shareMode": true}`，按钮与归档面板自动隐藏
+- `run.sh`/`install-service.sh` 的 launchd plist 默认就是 `SHARE_MODE=1`
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `WHISPER_MODEL` | `base` | `tiny`(最快)/`base`/`small`/`medium`(最准) |
+| `WHISPER_MODEL` | `small` | `tiny`(最快)/`base`/`small`(**推荐**)/`medium`(更准但更慢) |
 | `WHISPER_LANG` | `zh` | 识别语言 |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | 整理用模型 |
-| `DENOISE` | `1` | `0` 关闭降噪 |
+| `WHISPER_PROMPT` | `""` | 留空最稳。**不要写指令式**（Whisper 会直接复读）；如要风格引导，给一段真实转写样例如 `"同学们好,今天我们继续上课。"` |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | 3b 更快/更省；想更准用 `qwen2.5:7b` |
+| `DENOISE` | `1` | `0` 关闭频谱降噪（怀疑降噪削掉辅音时可关闭对比） |
 | `DIARIZE` | `1` | `0` 关闭说话人分离 |
+| `DIARIZE_WINDOW` | `200` | 说话人聚类滑动窗口大小（最近 N 个语音段），越小越快但说话人标签可能漂移 |
+| `SHARE_MODE` | `1` | `1` 启用分享模式（禁 push-notes/archive，公网必备） |
+| `HF_HUB_DISABLE_XET` | `1` | 必设。绕开 HuggingFace 新 Xet 存储在国内 `hf-mirror.com` 镜像下的 401 |
 | `PORT` | `5000` | 服务端口 |
 
 前端开关会覆盖对应的环境变量（按请求传参）。
 
 ## 已验证 / 已知限制
 
-- ✅ 已验证：`/health`、`/transcribe`(降噪+分离链路无报错)、`/push-notes`(AppleScript 正确生成并调用，沙箱中因无权限返回 `-10004`，本机授权后即可建笔记)、`webrtcvad`/`python_speech_features`/`sklearn`/`scipy` 均正常导入与运行。
-- ⚠️ **说话人分离准确度**：当前为轻量方案（MFCC 嵌入 + 聚类），在老师/同学两三类说话人场景下够用，但逊于 pyannote。若需要更高准确度，可在 `app.py` 的 `vad_turns/turn_embedding/cluster_speakers` 处替换为本机 pyannote（需免费 HuggingFace token + 装 torch）。
-- ⚠️ **实时性**：Whisper 在 Intel Mac 纯 CPU 上约 6 秒一段滚动输出，非严格逐字实时。
-- ⚠️ **边界断词**：逐块转写可能切到半个词，最终以「生成笔记」整理结果为准。
+- ✅ **本机直跑**：`./run.sh` 起 Flask + Whisper + Ollama，`/health` OK
+- ✅ **launchd 三件套**：`install-service.sh` 注册 `com.lecturelive.{ollama,app,tunnel}` 三个 LaunchAgent，开机自启、崩溃自愈；Ollama 防冲突保护（端口 11434 已被占则跳过）
+- ✅ **公网分享**：ngrok v3 dev domain 固定 HTTPS 地址，公网实测 `/health` 200、`/config` 返 `shareMode:true`、push-notes/archive 均 403、`/summarize` 端到端出笔记
+- ✅ **实时性**：前端 3 秒分块 + 后端「最近 200 段」聚类，秒级延迟，不再 2 分钟滞后
+- ✅ **Whisper small**：base→small 后中文识别率明显提升；仍觉不够可换 `WHISPER_MODEL=medium`
+- ⚠️ **说话人分离准确度**：当前为轻量方案（MFCC 嵌入 + 聚类 + 滑动窗口），老师/同学两三类够用，逊于 pyannote
+- ⚠️ **Whisper prompt 复读坑**：`initial_prompt` **不要写指令式**（如"请使用标准书面中文..."），Whisper 会直接复读当转写结果。设成真实转写样例或留空
+- ⚠️ **HuggingFace 401**：必须设 `HF_HUB_DISABLE_XET=1`（已写进 `run.sh`），否则 faster-whisper 模型下载会 401
 - 准确率（真实人声识别、说话人区分效果）建议你用一段真实课堂录音实测确认。
