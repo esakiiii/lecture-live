@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境(每个机器路径可能不同,clone 后重新创建)
+venv/
+.venv/
+env/
+
+# 运行时数据(个人,不应入库)
+logs/
+archive/
+
+# 平台相关二进制工具(macOS only,clone 后按 README 下载)
+bin/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 本地覆盖配置(如有)
+.env
+*.local

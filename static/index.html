@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课堂实时转写笔记</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2933; --sub:#6b7280; --line:#e3e8ef;
+    --brand:#2563eb; --brand-d:#1d4ed8; --accent:#0ea5e9; --warn:#d97706;
+    --ok:#16a34a; --chip:#eef2ff; --chipink:#3730a3;
+    --spkA:#2563eb; --spkB:#d97706; --spkC:#16a34a; --spkD:#db2777;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);background:var(--card);display:flex;align-items:center;gap:12px;}
+  header h1{font-size:18px;margin:0;font-weight:650;}
+  header .tag{font-size:12px;color:var(--sub);border:1px solid var(--line);padding:2px 8px;border-radius:999px;}
+  main{max-width:1180px;margin:18px auto;padding:0 18px;display:flex;flex-direction:column;gap:16px;}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);
+    padding:8px 14px;border-radius:9px;transition:.15s;}
+  button:hover:not(:disabled){border-color:var(--brand);color:var(--brand);}
+  button:disabled{opacity:.45;cursor:not-allowed;}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+  button.primary:hover:not(:disabled){background:var(--brand-d);border-color:var(--brand-d);color:#fff;}
+  .toggles{display:flex;gap:14px;align-items:center;font-size:13px;color:var(--sub);}
+  .toggles label{display:flex;gap:5px;align-items:center;cursor:pointer;}
+  .status{font-size:13px;color:var(--sub);margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:#cbd5e1;display:inline-block;}
+  .dot.live{background:var(--ok);box-shadow:0 0 0 4px rgba(22,163,74,.15);}
+  .dot.busy{background:var(--warn);}
+  .dot.err{background:#dc2626;}
+  .panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:880px){.panels{grid-template-columns:1fr;}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;min-height:340px;display:flex;flex-direction:column;}
+  .panel h2{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;}
+  .transcript{padding:14px;overflow:auto;flex:1;font-size:15px;max-height:460px;white-space:pre-wrap;}
+  .seg{margin:0 0 8px;}
+  .spk{font-weight:700;margin-right:4px;}
+  .spk.s0{color:var(--spkA);} .spk.s1{color:var(--spkB);} .spk.s2{color:var(--spkC);} .spk.s3{color:var(--spkD);}
+  .tabs{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .tabs button{padding:6px 12px;font-size:13px;border-radius:8px;}
+  .tabs button.active{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .tabbody{padding:14px;overflow:auto;flex:1;font-size:14px;max-height:460px;}
+  .tabbody.hidden{display:none;}
+  .hidden{display:none;}
+  input[type=text]{outline:none;}
+  input[type=text]:focus{border-color:var(--brand);}
+  #archiveBox a{color:var(--brand-d);text-decoration:none;font-weight:600;}
+  #archiveBox a:hover{text-decoration:underline;}
+  #archiveBox code{word-break:break-all;}
+  .sec{margin:0 0 14px;}
+  .sec h3{font-size:13px;color:var(--brand-d);margin:0 0 6px;font-weight:650;}
+  ul{margin:0;padding-left:20px;}
+  li{margin:3px 0;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{background:var(--chip);color:var(--chipink);font-size:12px;padding:3px 9px;border-radius:999px;}
+  .qa{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+  .qa .q{font-weight:600;} .qa .q::before{content:"Q ";color:var(--brand);}
+  .qa .a{color:var(--sub);margin-top:4px;} .qa .a::before{content:"A ";color:var(--ok);font-weight:600;}
+  .empty{color:var(--sub);font-size:13px;}
+  .hint{font-size:12px;color:var(--sub);padding:0 2px 4px;}
+  footer{text-align:center;color:var(--sub);font-size:12px;padding:6px 0 22px;}
+  code{background:#eef2f7;padding:1px 6px;border-radius:5px;font-size:12px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>课堂实时转写笔记</h1>
+  <span class="tag">本地 Whisper</span>
+  <span class="tag">降噪+说话人分离</span>
+  <span class="tag">Ollama 整理</span>
+</header>
+
+<main>
+  <div class="controls">
+    <button id="btnRec" class="primary">● 开始录音</button>
+    <button id="btnStop" disabled>■ 停止</button>
+    <button id="btnSum" disabled>✨ 生成笔记</button>
+    <button id="btnPush" disabled>📝 推送到备忘录</button>
+    <button id="btnCopy">⧉ 复制原文</button>
+    <button id="btnArchive">🗄 归档本节课</button>
+    <input id="inpTitle" type="text" placeholder="标题（可选）">
+    <span class="toggles">
+      <label><input type="checkbox" id="tgDenoise" checked> 降噪</label>
+      <label><input type="checkbox" id="tgDiarize" checked> 说话人分离</label>
+    </span>
+    <span class="status"><span id="dot" class="dot"></span><span id="statustxt">就绪</span></span>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h2>实时转写原文</h2>
+      <div id="live" class="transcript"><span class="empty">点击「开始录音」后，这里会随老师讲话逐句出现文字（开启说话人分离时会标注「说话人A/B」）。</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>整理后的笔记</h2>
+      <div class="tabs">
+        <button data-tab="notes" class="active">结构化笔记</button>
+        <button data-tab="outline">大纲+关键词</button>
+        <button data-tab="qa">问答对</button>
+      </div>
+      <div id="tab-notes" class="tabbody"><span class="empty">录一段后点「生成笔记」，AI 会像会议总结一样提炼重点。</span></div>
+      <div id="tab-outline" class="tabbody hidden"><span class="empty">—</span></div>
+      <div id="tab-qa" class="tabbody hidden"><span class="empty">—</span></div>
+    </div>
+  </div>
+
+  <div id="archiveBox" class="panel hidden">
+    <h2>🗄 归档结果</h2>
+    <div id="archiveInner" class="tabbody"></div>
+  </div>
+  <p class="hint">提示：首次转写会后台下载 Whisper 模型（国内镜像）；整理需本机已运行 Ollama 并拉取 <code>qwen2.5:7b</code>；「推送到备忘录」仅本机 macOS 的「备忘录」可用。建议用 Chrome。</p>
+</main>
+
+<footer>本地优先 · 数据不出本机</footer>
+
+<script>
+let sid = (crypto.randomUUID && crypto.randomUUID()) || ("s"+Date.now());
+let mediaStream=null, audioCtx=null, workletNode=null, streamDest=null;
+let recording=false, liveSegments=[];
+
+const $=(id)=>document.getElementById(id);
+const status=(txt,cls)=>{$("statustxt").textContent=txt;$("dot").className="dot"+(cls?(" "+cls):"");};
+const btnRec=$("btnRec"), btnStop=$("btnStop"), btnSum=$("btnSum"), btnPush=$("btnPush");
+const btnArchive=$("btnArchive"), archiveBox=$("archiveBox");
+// 分享模式：隐藏「推送到备忘录」「归档」等写入口（公开暴露时保护本机）
+fetch('/config').then(r=>r.json()).then(c=>{
+  if(c && c.shareMode){
+    btnPush.style.display='none';
+    btnArchive.style.display='none';
+    archiveBox.classList.add('hidden');
+  }
+}).catch(()=>{});
+
+const workletSrc=`
+class Rec extends AudioWorkletProcessor {
+  constructor(){ super(); this.buf=[]; this.n=0; this.chunk=16000*3;
+    this.port.onmessage=(e)=>{ if(e.data&&e.data.cmd==='flush') this.flush(); }; }
+  process(inputs){ const input=inputs[0];
+    if(input&&input[0]){ const ch=input[0]; this.buf.push(new Float32Array(ch)); this.n+=ch.length;
+      if(this.n>=this.chunk) this.flush(); } return true; }
+  flush(){ if(this.buf.length===0) return; const out=new Float32Array(this.n);
+    let o=0; for(const b of this.buf){ out.set(b,o); o+=b.length; } this.buf=[]; this.n=0;
+    this.port.postMessage(out,[out.buffer]); }
+}
+registerProcessor('rec',Rec);
+`;
+
+function floatToWav(samples){
+  const len=samples.length, buf=new ArrayBuffer(44+len*2), view=new DataView(buf);
+  const ws=(off,s)=>{for(let i=0;i<s.length;i++)view.setUint8(off+i,s.charCodeAt(i));};
+  ws(0,'RIFF');view.setUint32(4,36+len*2,true);ws(8,'WAVE');ws(12,'fmt ');
+  view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,16000,true);view.setUint32(28,16000*2,true);view.setUint16(32,2,true);
+  view.setUint16(34,16,true);ws(36,'data');view.setUint32(40,len*2,true);
+  let off=44; for(let i=0;i<len;i++){let s=Math.max(-1,Math.min(1,samples[i]));view.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}
+  return new Blob([view],{type:'audio/wav'});
+}
+
+async function sendChunk(pcm){
+  const blob=floatToWav(pcm);
+  const qs=`sid=${encodeURIComponent(sid)}&denoise=${$("tgDenoise").checked?1:0}&diarize=${$("tgDiarize").checked?1:0}`;
+  try{
+    const r=await fetch('/transcribe?'+qs,{method:'POST',body:blob});
+    const j=await r.json();
+    if(j.error){status('转写出错：'+j.error,'err');return;}
+    if(j.segments){liveSegments=j.segments;renderLive();}
+  }catch(e){status('上传失败：'+e,'err');}
+}
+
+function spkClass(spk){ if(!spk)return''; const m=/说话人([A-D])/.exec(spk); return m?('s'+(m[1].charCodeAt(0)-65)):''; }
+function renderLive(){
+  const el=$("live");
+  if(!liveSegments.length){el.innerHTML='<span class="empty">等待语音……</span>';el.scrollTop=el.scrollHeight;return;}
+  el.innerHTML=liveSegments.map(s=>{
+    const c=spkClass(s.speaker);
+    const pre=s.speaker?`<span class="spk ${c}">${s.speaker}：</span>`:'';
+    return `<div class="seg">${pre}${escapeHtml(s.text)}</div>`;
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+btnRec.onclick=async()=>{
+  try{mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});}
+  catch(e){status('无法访问麦克风：'+e,'err');return;}
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+  await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([workletSrc],{type:'application/javascript'})));
+  const src=audioCtx.createMediaStreamSource(mediaStream);
+  workletNode=new AudioWorkletNode(audioCtx,'rec');
+  streamDest=audioCtx.createGain();streamDest.gain.value=0;
+  src.connect(workletNode);workletNode.connect(streamDest);streamDest.connect(audioCtx.destination);
+  workletNode.port.onmessage=(e)=>sendChunk(e.data);
+  recording=true;liveSegments=[];renderLive();
+  btnRec.disabled=true;btnStop.disabled=false;btnSum.disabled=false;btnPush.disabled=false;
+  status('录音中…','live');
+};
+btnStop.onclick=()=>{
+  if(!recording)return; recording=false;
+  try{workletNode.port.postMessage({cmd:'flush'});}catch(e){}
+  if(mediaStream)mediaStream.getTracks().forEach(t=>t.stop());
+  if(audioCtx)audioCtx.close();
+  btnRec.disabled=false;btnStop.disabled=true;
+  status('已停止，可生成笔记','');
+};
+function liveText(){ return liveSegments.map(s=>(s.speaker?s.speaker+'：':'')+s.text).join('\n'); }
+
+btnSum.onclick=async()=>{
+  const txt=liveText(); if(!txt.trim()){status('还没有转写内容','err');return;}
+  btnSum.disabled=true;status('AI 整理中…','busy');
+  ["tab-notes","tab-outline","tab-qa"].forEach(t=>$(t).innerHTML='<span class="empty">思考中…</span>');
+  try{
+    const r=await fetch('/summarize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:txt})});
+    const j=await r.json();
+    if(j.error){status('整理失败','err');showError(j.error);return;}
+    renderNotes(j);status('笔记已生成','ok');
+  }catch(e){status('整理失败：'+e,'err');showError(''+e);}
+  btnSum.disabled=false;
+};
+
+btnPush.onclick=async()=>{
+  const txt=liveText(); if(!txt.trim()){status('没有可推送的内容','err');return;}
+  btnPush.disabled=true;status('推送到备忘录…','busy');
+  try{
+    const r=await fetch('/push-notes',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title:'课堂笔记 '+new Date().toLocaleString('zh-CN'),content:txt})});
+    const j=await r.json();
+    if(j.error){status('推送失败','err');alert(j.error);}
+    else{status('已推送到备忘录 ✅','ok');}
+  }catch(e){status('推送失败：'+e,'err');}
+  btnPush.disabled=false;
+};
+
+function showError(msg){const html='<div class="empty" style="color:#dc2626;white-space:pre-wrap">'+escapeHtml(msg)+'</div>';
+  ["tab-notes","tab-outline","tab-qa"].forEach(t=>$(t).innerHTML=html);}
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function list(arr){if(!arr||!arr.length)return '<span class="empty">（无）</span>';
+  return '<ul>'+arr.map(x=>'<li>'+escapeHtml(x)+'</li>').join('')+'</ul>';}
+function renderNotes(j){
+  const n=j.notes||{};
+  $("tab-notes").innerHTML=
+    '<div class="sec"><h3>要点</h3>'+list(n.要点)+'</div>'+
+    '<div class="sec"><h3>核心概念</h3>'+list(n.核心概念)+'</div>'+
+    '<div class="sec"><h3>疑问</h3>'+list(n.疑问)+'</div>'+
+    '<div class="sec"><h3>待办</h3>'+list(n.待办)+'</div>';
+  const ol=j.outline||{},keys=Object.keys(ol); let oh='';
+  if(!keys.length)oh='<span class="empty">（无）</span>';
+  else for(const k of keys){oh+='<div style="font-weight:600;margin-top:8px">'+escapeHtml(k)+'</div>'+list(ol[k]);}
+  const kw=(j.keywords||[]).map(x=>'<span class="chip">'+escapeHtml(x)+'</span>').join('');
+  $("tab-outline").innerHTML=oh+'<div class="sec" style="margin-top:14px"><h3>关键词</h3><div class="chips">'+(kw||'<span class="empty">（无）</span>')+'</div></div>';
+  const qa=j.qa||[];
+  $("tab-qa").innerHTML=qa.length?qa.map(p=>'<div class="qa"><div class="q">'+escapeHtml(p.q||'')+'</div><div class="a">'+escapeHtml(p.a||'')+'</div></div>').join(''):'<span class="empty">（无问答内容）</span>';
+}
+document.querySelectorAll('.tabs button').forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');['notes','outline','qa'].forEach(t=>$("tab-"+t).classList.add('hidden'));
+    $("tab-"+b.dataset.tab).classList.remove('hidden');};
+});
+$("btnCopy").onclick=()=>{const t=liveText();
+  navigator.clipboard.writeText(t).then(()=>status('原文已复制','ok'),()=>status('复制失败','err'));};
+$("btnExport").onclick=()=>{const t=liveText();if(!t.trim()){status('没有可导出的内容','err');return;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/markdown'}));
+  a.download='lecture-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.md';a.click();};
+</script>
+</body>
+</html>
